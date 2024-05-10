@@ -1,0 +1,107 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+  name: pci-device-plugin
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pci-device-plugin
+  namespace: pci-device-plugin
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - security.openshift.io
+    resourceNames:
+      - privileged
+    resources:
+      - securitycontextconstraints
+    verbs:
+      - use
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pci-device-plugin
+  namespace: pci-device-plugin
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pci-device-plugin
+  namespace: pci-device-plugin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pci-device-plugin
+subjects:
+  - kind: ServiceAccount
+    name: pci-device-plugin
+    namespace: pci-device-plugin
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: pci-device-plugin
+  namespace: pci-device-plugin
+spec:
+  selector:
+    matchLabels:
+      name: pci-device-plugin
+  template:
+    metadata:
+      labels:
+        name: pci-device-plugin
+    spec:
+      nodeSelector:
+          pci-device-plugin: "true"
+      hostNetwork: true
+      priorityClassName: "system-node-critical"
+      containers:
+      - name: pci-device-plugin
+        image: quay.io/jonkey/pic-device-plugin:0.6
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+          - name: device-plugins
+            mountPath: /var/lib/kubelet/device-plugins
+          - name: dev
+            mountPath: /dev
+          - name: sys
+            mountPath: /sys
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "10Mi"
+          limits:
+            cpu: "100m"
+            memory: "20Mi"
+      serviceAccountName: pci-device-plugin
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: sys
+          hostPath:
+            path: /sys
+      seccompProfile:
+        type: RuntimeDefault
